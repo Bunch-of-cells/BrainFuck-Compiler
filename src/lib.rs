@@ -381,9 +381,9 @@ pub fn run_in_terminal(
         print!(">>> ");
         io::stdout().flush().unwrap();
         io::stdin().read_line(&mut contents).unwrap();
-        print!("{}", contents);
-        io::stdout().flush().unwrap();
-        if contents.eq("quit\n") {
+        contents.pop();
+        println!("{}", contents);
+        if contents.eq("quit") {
             break;
         }
         eval(&contents, &mut mem, &mut cellptr, debug, &getch, mem_size)?;
