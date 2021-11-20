@@ -5,7 +5,7 @@ This is a BrainFuck Compiler written purely in Rust. It is a source-to-source co
 This compiler is able to compile the mandelbrot set in just 0.25 seconds. Take a look at mandelbrot.bf for the program
 
 # Setup
-You need to install Rust to make the executable. If you are on Linux you can find a pre-compiled executable in target/release/brainfuck.
+You need to install Rust to make the executable.
 
 # Bugs
 If you run the executable with no arguments, the stdin interpreter starts running. But when you start writing anything it does not show up on the console.
