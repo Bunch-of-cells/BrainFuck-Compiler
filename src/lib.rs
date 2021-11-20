@@ -384,13 +384,12 @@ pub fn run_in_terminal(
         contents.pop();
         println!("{}", contents);
         if contents.eq("quit") {
-            break;
+            break Ok(());
         }
         eval(&contents, &mut mem, &mut cellptr, debug, &getch, mem_size)?;
         println!();
         contents.clear();
     }
-    Ok(())
 }
 
 fn eval(
