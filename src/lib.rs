@@ -208,7 +208,7 @@ pub fn interpret(
             bracemap.insert(pos, start);
         }
     }
-
+    println!("\n\x1b[90m--------------\x1b[0m\x1b[96mOUTPUT\x1b[0m\x1b[90m--------------\x1b[0m\n");
     while codeptr < contents.len() {
         let code = contents.chars().nth(codeptr).unwrap();
         match code {
@@ -253,6 +253,7 @@ pub fn interpret(
         }
         codeptr += 1;
     }
+    println!("\n\x1b[90m----------------------------------\x1b[0m");
     Ok(())
 }
 
