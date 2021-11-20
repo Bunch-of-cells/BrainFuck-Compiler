@@ -1,14 +1,15 @@
 # BrainFuck-Compiler
 
-This is a BrainFuck Compiler written purely in Rust. It converts BrainFuck code to C code, and then finally machine language, thus generating an executable.
+This is a BrainFuck Compiler written purely in Rust. It is a source-to-source compiler. It converts BrainFuck code to C code, and then finally machine code.
 
-As of now, this compiler is able to draw a mandelbrot set in 0.25 seconds. take a look at mandelbrot.bf for the program
+This compiler is able to compile the mandelbrot set in just 0.25 seconds. Take a look at mandelbrot.bf for the program
 
 # Setup
 You need to install Rust to make the executable. If you are on Linux you can find a pre-compiled executable in target/release/brainfuck.
 
 # Bugs
-If you run the executable with no arguments, the stdin interpreter sstarts running. But when you start writing anything it does not show up on the console.
+If you run the executable with no arguments, the stdin interpreter starts running. But when you start writing anything it does not show up on the console.
+Also this compiler is not very optimized.
 
 # Usage
 You can invoke the program like this:
