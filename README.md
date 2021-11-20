@@ -1,4 +1,5 @@
 # BrainFuck-Compiler
+You guys always wanted to code in brainfuck, right? Well, now you can!
 
 This is a BrainFuck Compiler written purely in Rust. It is a source-to-source compiler. It converts BrainFuck code to C code, and then finally machine code.
 
