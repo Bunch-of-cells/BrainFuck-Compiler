@@ -189,6 +189,9 @@ pub fn interpret(
     ptr_offset: usize,
 ) -> Result<(), &str> {
     let mut mem = vec![0];
+    for _ in 0..ptr_offset {
+        mem.push(0)
+    }
     let mut cellptr = ptr_offset;
     let mut debug_count = 0;
     let getch = Getch::new().unwrap();
@@ -369,16 +372,20 @@ pub fn run_in_terminal(
 ) -> Result<(), &'static str> {
     let getch = Getch::new().unwrap();
     let mut mem = vec![0];
+    for _ in 0..ptr_offset {
+        mem.push(0)
+    }
     let mut cellptr = ptr_offset;
     let mut contents = String::new();
     loop {
         print!(">>> ");
         io::stdout().flush().unwrap();
         io::stdin().read_line(&mut contents).unwrap();
+        print!("{}", contents);
+        io::stdout().flush().unwrap();
         if contents.eq("quit\n") {
             break;
         }
-        println!("{}", contents);
         eval(&contents, &mut mem, &mut cellptr, debug, &getch, mem_size)?;
         println!();
         contents.clear();
