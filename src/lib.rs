@@ -14,6 +14,7 @@ pub struct Args<'a> {
     pub debug: bool,
     pub mem_size: usize,
     pub offset: usize,
+    pub release: bool,
     run: bool,
     output: &'a str,
     keep: bool,
@@ -33,11 +34,13 @@ impl ArgFlags {
     const DEBUG: u16 = 128;
     const MEM_SIZE: u16 = 256;
     const OFFSET: u16 = 512;
+    const RELEASE: u16 = 1024;
 }
 
 impl Default for Args<'_> {
     fn default() -> Self {
         Self {
+            release: false,
             offset: 0,
             mem_size: 30000,
             console: false,
@@ -75,6 +78,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                 println!("  --interpret | -i       Interprets the program instead of compiling it");
                 println!("  --debug | -d           Activates the debug mode.\n\t\t\t In the debug mode, any # will be considered as a debug symbol");
                 println!("  --mem_size | -m        Set the memory, default is 30000");
+                println!("  --release | -rl        Compiles in release mode");
                 println!("  --ptr-offset | -po     Set the pointer offset from the start of the memory, default is 0\n");
             }
             "--keep" | "-k" => {
@@ -83,6 +87,13 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                 }
                 flags.0 |= ArgFlags::KEEP;
                 parsed_args.keep = true;
+            }
+            "--release" | "-rl" => {
+                if flags.0 & ArgFlags::RELEASE != 0 {
+                    return Err("More than 1 release flag passed".to_owned());
+                }
+                flags.0 |= ArgFlags::RELEASE;
+                parsed_args.release = true;
             }
             "--debug" | "-d" => {
                 if flags.0 & ArgFlags::DEBUG != 0 {
@@ -156,17 +167,21 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             },
         }
     }
-    if parsed_args.offset > parsed_args.mem_size {
+    validate_args(flags, parsed_args)
+}
+
+fn validate_args(flags: ArgFlags, mut args: Args) -> Result<Args, String> {
+    if args.offset > args.mem_size {
         return Err("pointer offset cannot be greater than memory size".to_owned());
     }
     if flags.0 & 896 != 0 || flags.0 == 0 {
-        parsed_args.console = true;
-        return Ok(parsed_args);
+        args.console = true;
+        return Ok(args);
     }
-    if flags.0 & 252 != 0 && flags.0 & 2 == 0 {
+    if flags.0 & 1276 != 0 && flags.0 & 2 == 0 {
         return Err("No File passed".to_owned());
     }
-    Ok(parsed_args)
+    Ok(args)
 }
 
 pub fn get_code(filename: &str) -> Result<String, String> {
@@ -309,7 +324,15 @@ int main() {{
 pub fn compile(contents: &str, args: Args) -> Result<(), Box<dyn Error>> {
     println!("\x1b[1mCreating the C file...\x1b[0m");
     let mut cpp_file = File::create([args.output, ".c"].concat())?;
-    cpp_file.write_all(translate(contents, args.debug, args.mem_size, args.offset).as_bytes())?;
+    cpp_file.write_all(
+        translate(
+            contents,
+            args.debug && !args.release,
+            args.mem_size,
+            args.offset,
+        )
+        .as_bytes(),
+    )?;
 
     println!(
         "\x1b[1mCompiling the C file using {}...\x1b[0m",
