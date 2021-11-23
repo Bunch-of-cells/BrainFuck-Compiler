@@ -9,7 +9,7 @@ fn main() {
         Ok(res) => {
             if res.console {
                 println!("\x1b[1mRunning brainfuck interpreter in console...\x1b[0m");
-                match run_in_terminal(res.debug && !res.release, res.mem_size, res.offset) {
+                match run_in_terminal(res) {
                     Ok(_) => process::exit(0),
                     Err(e) => {
                         eprintln!("\x1b[91mError\x1b[0m: {}", e);
@@ -41,12 +41,7 @@ fn main() {
 
     if args.interpret {
         println!("\x1b[1mInterpreting the code...\x1b[0m");
-        match interpret(
-            &contents,
-            args.debug && !args.release,
-            args.mem_size,
-            args.offset,
-        ) {
+        match interpret(contents, args) {
             Ok(_) => (),
             Err(e) => {
                 eprintln!("\x1b[91mError\x1b[0m: {}", e);
@@ -55,7 +50,7 @@ fn main() {
         }
     } else {
         println!("\x1b[1mTranspiling the code to C...\x1b[0m");
-        match compile(&contents, args) {
+        match compile(contents, args) {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("\x1b[91mError\x1b[0m: {}", e);
