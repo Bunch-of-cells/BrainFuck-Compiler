@@ -10,7 +10,6 @@ You need to install Rust to make the executable.
 
 # Bugs
 If you run the executable with no arguments, the stdin interpreter starts running. But when you start writing anything it does not show up on the console.
-Also, this compiler is not very optimized.
 
 # Usage
 You can invoke the program like this:
