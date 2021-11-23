@@ -167,20 +167,21 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             },
         }
     }
-    validate_args(flags, parsed_args)
+    validate_args(flags, parsed_args, args.len())
 }
 
-fn validate_args(flags: ArgFlags, mut args: Args) -> Result<Args, String> {
+fn validate_args(flags: ArgFlags, mut args: Args, len: usize) -> Result<Args, String> {
     if args.offset > args.mem_size {
         return Err("pointer offset cannot be greater than memory size".to_owned());
     }
-    if flags.0 & 896 != 0 || flags.0 == 0 {
+    if (flags.0 & 1151 == 0 && len <= 3) || flags.0 == 0 {
         args.console = true;
         return Ok(args);
     }
-    if flags.0 & 1276 != 0 && flags.0 & 2 == 0 {
+    if flags.0 & 2044 != 0 && flags.0 & 2 == 0 {
         return Err("No File passed".to_owned());
     }
+    println!("{:b} {:b}", flags.0, flags.0 & 2044);
     Ok(args)
 }
 
