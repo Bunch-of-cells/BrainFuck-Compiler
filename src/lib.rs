@@ -550,29 +550,32 @@ pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
                     };
                     chars.next();
                 }
-                format!("\tptr += {};\n", counter)
+                if counter == 0 {"".to_owned()}
+                else {format!("\tptr += {};\n", counter)}
             },
-            '+' | '-' | 'c' => {
+            '+' | '-' | 'c' | ',' => {
                 let mut counter = if op == '+' { 1 } else if op == '-' { -1 } else {0};
-                let mut getch = false;
+                let mut getch = (op == ',') as usize;
                 loop {
                     counter += match chars.peek() {
                         Some('+') => 1,
                         Some('-') => -1,
-                        Some(',') => {
-                            getch = true;
-                            break;
-                        }
                         Some('c') => -counter,
+                        Some(',') => {
+                            getch += 1;
+                            -counter
+                        }
                         _ => break
                     };
                     chars.next();
                 }
-                if getch {"\t*ptr = getch();\n".to_owned()}
+                if getch > 0 {
+                    format!("\t*ptr = {}+ {};\n", "getch() ".repeat(getch), counter)
+                }
+                else if counter == 0 {"".to_owned()}
                 else {format!("\t*ptr += {};\n", counter)}
             },
             '.' => "\tprintf(\"%c\", *ptr);\n".to_owned(),
-            ',' => "\t*ptr = getch();\n".to_owned(),
             '[' => "\twhile (*ptr) {\n".to_owned(),
             ']' => "\t}\n".to_owned(),
             '#' if debug => {
