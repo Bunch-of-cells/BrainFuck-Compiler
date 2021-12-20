@@ -14,6 +14,8 @@ pub struct Args<'a> {
     pub debug: bool,
     pub mem_size: usize,
     pub offset: usize,
+    pub release: bool,
+    verbose: bool,
     run: bool,
     output: &'a str,
     keep: bool,
@@ -25,19 +27,22 @@ struct ArgFlags(u16);
 impl ArgFlags {
     const HELP: u16 = 1;
     const FILE: u16 = 2;
-    const OUTPUT: u16 = 4;
-    const KEEP: u16 = 8;
-    const COMPILER: u16 = 16;
-    const RUN: u16 = 32;
+    const OUTPUT: u16 = 4; //I
+    const KEEP: u16 = 8; //I
+    const COMPILER: u16 = 16; //I
+    const RUN: u16 = 32; //I
     const INTERPRET: u16 = 64;
     const DEBUG: u16 = 128;
     const MEM_SIZE: u16 = 256;
     const OFFSET: u16 = 512;
+    const RELEASE: u16 = 1024; //I
+    const VERBOSE: u16 = 2048;
 }
 
 impl Default for Args<'_> {
     fn default() -> Self {
         Self {
+            release: false,
             offset: 0,
             mem_size: 30000,
             console: false,
@@ -48,6 +53,7 @@ impl Default for Args<'_> {
             compiler: "gcc",
             interpret: false,
             debug: false,
+            verbose: false,
         }
     }
 }
@@ -75,6 +81,8 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                 println!("  --interpret | -i       Interprets the program instead of compiling it");
                 println!("  --debug | -d           Activates the debug mode.\n\t\t\t In the debug mode, any # will be considered as a debug symbol");
                 println!("  --mem_size | -m        Set the memory, default is 30000");
+                println!("  --release | -rl        Compiles in release mode");
+                println!("  --verbose | -v         Compiles VerboseFuck");
                 println!("  --ptr-offset | -po     Set the pointer offset from the start of the memory, default is 0\n");
             }
             "--keep" | "-k" => {
@@ -83,6 +91,20 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                 }
                 flags.0 |= ArgFlags::KEEP;
                 parsed_args.keep = true;
+            }
+            "--verbose" | "-v" => {
+                if flags.0 & ArgFlags::VERBOSE != 0 {
+                    return Err("Compile in VerboseFuck".to_owned());
+                }
+                flags.0 |= ArgFlags::VERBOSE;
+                parsed_args.verbose = true;
+            }
+            "--release" | "-rl" => {
+                if flags.0 & ArgFlags::RELEASE != 0 {
+                    return Err("More than 1 release flag passed".to_owned());
+                }
+                flags.0 |= ArgFlags::RELEASE;
+                parsed_args.release = true;
             }
             "--debug" | "-d" => {
                 if flags.0 & ArgFlags::DEBUG != 0 {
@@ -145,7 +167,10 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                         return Err("More than 1 file passed".to_owned());
                     }
                     if !other.ends_with(".bf") {
-                        return Err("File must end with .bf".to_owned());
+                        return Err(format!(
+                            "Invalid file name: '{}'. File must end with .bf",
+                            other
+                        ));
                     }
                     flags.0 |= ArgFlags::FILE;
                     parsed_args.file = other;
@@ -156,45 +181,53 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             },
         }
     }
-    if parsed_args.offset > parsed_args.mem_size {
+    validate_args(flags, parsed_args, args.len())
+}
+
+fn validate_args(flags: ArgFlags, mut args: Args, len: usize) -> Result<Args, String> {
+    if args.offset > args.mem_size {
         return Err("pointer offset cannot be greater than memory size".to_owned());
     }
-    if flags.0 & 896 != 0 || flags.0 == 0 {
-        parsed_args.console = true;
-        return Ok(parsed_args);
+    if flags.0 & 1084 != 0 && flags.0 & ArgFlags::INTERPRET != 0 {
+        return Err("Invalid argument combination".to_owned());
     }
-    if flags.0 & 252 != 0 && flags.0 & 2 == 0 {
+    if (flags.0 & 62591 == 0 && len <= 3) || flags.0 == 0 {
+        args.console = true;
+        return Ok(args);
+    }
+    if flags.0 & 64387 != 0 && flags.0 & ArgFlags::FILE == 0 {
         return Err("No File passed".to_owned());
     }
-    Ok(parsed_args)
+    Ok(args)
 }
 
 pub fn get_code(filename: &str) -> Result<String, String> {
-    let mut contents = match fs::read_to_string(filename) {
+    let contents = match fs::read_to_string(filename) {
         Ok(contents) => contents,
         Err(err) => return Err(err.to_string()),
     };
 
-    contents.retain(|c| "<>[]+-.,#".contains(c));
     if contents.matches('[').count() != contents.matches(']').count() {
         return Err("Unbalanced Brackets".to_string());
     }
     Ok(contents)
 }
 
-pub fn interpret(
-    contents: &str,
-    debug: bool,
-    mem_size: usize,
-    ptr_offset: usize,
-) -> Result<(), &str> {
+pub fn interpret(mut contents: String, args: Args) -> Result<(), String> {
     let mut mem = vec![0];
-    let mut cellptr = ptr_offset;
+    for _ in 0..args.offset {
+        mem.push(0)
+    }
+    if !args.verbose {
+        contents.retain(|c| "<>[]+-.,#".contains(c))
+    }
+    let mut cellptr = args.offset;
     let mut debug_count = 0;
     let getch = Getch::new().unwrap();
     let mut codeptr = 0;
     let mut bracemap: HashMap<usize, usize> = HashMap::new();
     let mut temp = Vec::new();
+    let mut error = None;
 
     for (pos, code) in contents.chars().enumerate() {
         if code == '[' {
@@ -205,14 +238,14 @@ pub fn interpret(
             bracemap.insert(pos, start);
         }
     }
-
+    println!("\n\x1b[90m--------------\x1b[0m\x1b[96mOUTPUT\x1b[0m\x1b[90m--------------\x1b[0m\n");
     while codeptr < contents.len() {
         let code = contents.chars().nth(codeptr).unwrap();
         match code {
             '>' => {
                 cellptr += 1;
-                if cellptr > mem_size {
-                    return Err("Memory index out of bound");
+                if cellptr > args.mem_size {
+                    return Err("Memory index out of bound".to_owned());
                 }
                 if cellptr == mem.len() {
                     mem.push(0)
@@ -220,7 +253,7 @@ pub fn interpret(
             }
             '<' => {
                 if cellptr == 0 {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 cellptr -= 1;
             }
@@ -238,7 +271,7 @@ pub fn interpret(
                     codeptr = *bracemap.get(&codeptr).unwrap()
                 }
             }
-            '#' if debug => {
+            '#' if args.debug => {
                 debug_count += 1;
 
                 println!(
@@ -246,14 +279,21 @@ pub fn interpret(
                     debug_count, mem[cellptr] as char, mem[cellptr], cellptr
                 )
             }
-            _ => {}
+            ch => {
+                error = Some(format!("Invalid BrainFuck character: '{}'", ch));
+                break;
+            }
         }
         codeptr += 1;
+    }
+    println!("\n\x1b[90m----------------------------------\x1b[0m");
+    if let Some(err) = error {
+        return Err(err);
     }
     Ok(())
 }
 
-fn translate(contents: &str, debug: bool, mem: usize, offset: usize) -> String {
+fn translate(contents: &str, debug: bool, mem: usize, offset: usize) -> Result<String, String> {
     let mut cpp_code = format!(
         "\
 #include <stdio.h>
@@ -282,30 +322,27 @@ int main() {{
     if debug {
         cpp_code.push_str("\tunsigned int debug_count = 0;\n")
     }
-    for code in contents.chars() {
-        cpp_code.push_str(match code {
-            '>' => "\tptr++;\n",
-            '<' => "\tptr--;\n",
-            '+' => "\t(*ptr)++;\n",
-            '-' => "\t(*ptr)--;\n",
-            '.' => "\tprintf(\"%c\", *ptr);\n",
-            ',' => "\t*ptr = getch();\n",
-            '[' => "\twhile (*ptr) {\n",
-            ']' => "\t}\n",
-            '#' if debug => {
-                "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);"
-            }
-            _ => "",
-        })
-    }
+    let gen_code = gen_optimized(contents.to_string(), debug)?;
+    cpp_code += &gen_code;
     cpp_code.push_str("\treturn 0;\n}\n");
-    cpp_code
+    Ok(cpp_code)
 }
 
-pub fn compile(contents: &str, args: Args) -> Result<(), Box<dyn Error>> {
+pub fn compile(mut contents: String, args: Args) -> Result<(), Box<dyn Error>> {
+    if !args.verbose {
+        contents.retain(|c| "<>[]+-.,#".contains(c));
+    }
     println!("\x1b[1mCreating the C file...\x1b[0m");
     let mut cpp_file = File::create([args.output, ".c"].concat())?;
-    cpp_file.write_all(translate(contents, args.debug, args.mem_size, args.offset).as_bytes())?;
+    cpp_file.write_all(
+        translate(
+            &contents,
+            args.debug && !args.release,
+            args.mem_size,
+            args.offset,
+        )?
+        .as_bytes(),
+    )?;
 
     println!(
         "\x1b[1mCompiling the C file using {}...\x1b[0m",
@@ -362,28 +399,37 @@ fn run(filename: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn run_in_terminal(
-    debug: bool,
-    mem_size: usize,
-    ptr_offset: usize,
-) -> Result<(), &'static str> {
+pub fn run_in_terminal(args: Args) -> Result<(), String> {
     let getch = Getch::new().unwrap();
     let mut mem = vec![0];
-    let mut cellptr = ptr_offset;
+    for _ in 0..args.offset {
+        mem.push(0)
+    }
+    let mut cellptr = args.offset;
     let mut contents = String::new();
     loop {
         print!(">>> ");
         io::stdout().flush().unwrap();
         io::stdin().read_line(&mut contents).unwrap();
-        if contents.eq("quit\n") {
-            break;
-        }
+        contents.pop();
         println!("{}", contents);
-        eval(&contents, &mut mem, &mut cellptr, debug, &getch, mem_size)?;
+        if contents.eq("quit") {
+            break Ok(());
+        }
+        if !args.verbose {
+            contents.retain(|c| "<>[]+-.,#".contains(c));
+        }
+        eval(
+            &contents,
+            &mut mem,
+            &mut cellptr,
+            args.debug,
+            &getch,
+            args.mem_size,
+        )?;
         println!();
         contents.clear();
     }
-    Ok(())
 }
 
 fn eval(
@@ -393,7 +439,7 @@ fn eval(
     debug: bool,
     getch: &Getch,
     mem_size: usize,
-) -> Result<(), &'static str> {
+) -> Result<(), String> {
     let mut codeptr = 0;
     let mut bracemap: HashMap<usize, usize> = HashMap::new();
     let mut temp = Vec::new();
@@ -415,7 +461,7 @@ fn eval(
             '>' => {
                 *cellptr += 1;
                 if *cellptr > mem_size {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 if *cellptr == mem.len() {
                     mem.push(0)
@@ -423,7 +469,7 @@ fn eval(
             }
             '<' => {
                 if *cellptr == 0 {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 *cellptr -= 1;
             }
@@ -449,9 +495,91 @@ fn eval(
                     debug_count, mem[*cellptr] as char, mem[*cellptr], cellptr
                 )
             }
-            _ => {}
+            ch => return Err(format!("Invalid BrainFuck character: '{}'", ch)),
         }
         codeptr += 1;
     }
     Ok(())
+}
+
+pub fn verbosify(filename: &str) -> Result<(), String> {
+    println!("\x1b[1mOpening {}...\x1b[0m", filename);
+    let mut contents = match fs::read_to_string(filename) {
+        Ok(contents) => contents,
+        Err(err) => return Err(err.to_string()),
+    };
+    println!("\x1b[1mVerbosifying...\x1b[0m");
+    contents.retain(|c| "<>[]+-.,".contains(c));
+    let mut cpp_file = match File::create(filename) {
+        Ok(x) => x,
+        Err(err) => return Err(err.to_string()),
+    };
+    println!("\x1b[1mSaving {}...\x1b[0m", filename);
+    match cpp_file.write_all(contents.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
+    let mut gen_code = String::new();
+    while code.contains("><")
+        || code.contains("<>")
+        || code.contains("+-")
+        || code.contains("-+")
+        || code.contains("[-]")
+        || code.contains("[+]")
+    {
+        code = code.replace("><", "");
+        code = code.replace("<>", "");
+        code = code.replace("+-", "");
+        code = code.replace("-+", "");
+        code = code.replace("[-]", "c");
+        code = code.replace("[+]", "c");
+    }
+    let mut chars = code.chars().peekable();
+    while let Some(op) = chars.next() {
+        gen_code.push_str(&match op {
+            '>' | '<' => {
+                let mut counter = if op == '>' { 1 } else { -1 };
+                loop {
+                    counter += match chars.peek() {
+                        Some('>') => 1,
+                        Some('<') => -1,
+                        _ => break
+                    };
+                    chars.next();
+                }
+                format!("\tptr += {};\n", counter)
+            },
+            '+' | '-' | 'c' => {
+                let mut counter = if op == '+' { 1 } else if op == '-' { -1 } else {0};
+                let mut getch = false;
+                loop {
+                    counter += match chars.peek() {
+                        Some('+') => 1,
+                        Some('-') => -1,
+                        Some(',') => {
+                            getch = true;
+                            break;
+                        }
+                        Some('c') => -counter,
+                        _ => break
+                    };
+                    chars.next();
+                }
+                if getch {"\t*ptr = getch();\n".to_owned()}
+                else {format!("\t*ptr += {};\n", counter)}
+            },
+            '.' => "\tprintf(\"%c\", *ptr);\n".to_owned(),
+            ',' => "\t*ptr = getch();\n".to_owned(),
+            '[' => "\twhile (*ptr) {\n".to_owned(),
+            ']' => "\t}\n".to_owned(),
+            '#' if debug => {
+                "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);".to_owned()
+            }
+            _ => {return Err(format!("Invalid BrainFuck character: '{}'", op))},
+        });
+    }
+    Ok(gen_code)
 }
