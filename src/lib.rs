@@ -555,21 +555,23 @@ pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
             },
             '+' | '-' | 'c' | ',' => {
                 let mut counter = if op == '+' { 1 } else if op == '-' { -1 } else {0};
-                let mut getch = op == ',';
+                let mut getch = (op == ',') as usize;
                 loop {
                     counter += match chars.peek() {
                         Some('+') => 1,
                         Some('-') => -1,
                         Some('c') => -counter,
                         Some(',') => {
-                            getch = true;
+                            getch += 1;
                             -counter
                         }
                         _ => break
                     };
                     chars.next();
                 }
-                if getch {format!("\t*ptr = getch() + {};\n", counter)}
+                if getch > 0 {
+                    format!("\t*ptr = {}+ {};\n", "getch() ".repeat(getch), counter)
+                }
                 else if counter == 0 {"".to_owned()}
                 else {format!("\t*ptr += {};\n", counter)}
             },
