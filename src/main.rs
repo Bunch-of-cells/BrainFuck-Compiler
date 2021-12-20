@@ -4,6 +4,21 @@ use std::{env, process};
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    if args[0] == "./verbosify" {
+        if args.len() != 2 {
+            eprintln!("\x1b[91mError\x1b[0m: Wrong Number of arguments.");
+            process::exit(1);
+        }
+        println!("\x1b[1mVerbosifying {}...\x1b[0m", args[1]);
+        match verbosify(&args[1]) {
+            Ok(_) => process::exit(0),
+            Err(e) => {
+                eprintln!("\x1b[91mError\x1b[0m: {}", e);
+                process::exit(1);
+            }
+        }
+    }
+
     println!("\x1b[1mParsing arguments...\x1b[0m");
     let args = match parse_args(&args) {
         Ok(res) => {

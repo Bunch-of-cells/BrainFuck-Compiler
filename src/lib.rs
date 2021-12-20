@@ -213,7 +213,7 @@ pub fn get_code(filename: &str) -> Result<String, String> {
     Ok(contents)
 }
 
-pub fn interpret(mut contents: String, args: Args) -> Result<(), &'static str> {
+pub fn interpret(mut contents: String, args: Args) -> Result<(), String> {
     let mut mem = vec![0];
     for _ in 0..args.offset {
         mem.push(0)
@@ -245,7 +245,7 @@ pub fn interpret(mut contents: String, args: Args) -> Result<(), &'static str> {
             '>' => {
                 cellptr += 1;
                 if cellptr > args.mem_size {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 if cellptr == mem.len() {
                     mem.push(0)
@@ -253,7 +253,7 @@ pub fn interpret(mut contents: String, args: Args) -> Result<(), &'static str> {
             }
             '<' => {
                 if cellptr == 0 {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 cellptr -= 1;
             }
@@ -279,8 +279,8 @@ pub fn interpret(mut contents: String, args: Args) -> Result<(), &'static str> {
                     debug_count, mem[cellptr] as char, mem[cellptr], cellptr
                 )
             }
-            _ => {
-                error = Some("Invalid BrainFuck character");
+            ch => {
+                error = Some(format!("Invalid BrainFuck character: '{}'", ch));
                 break;
             }
         }
@@ -293,7 +293,7 @@ pub fn interpret(mut contents: String, args: Args) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn translate(contents: &str, debug: bool, mem: usize, offset: usize) -> Result<String, &str> {
+fn translate(contents: &str, debug: bool, mem: usize, offset: usize) -> Result<String, String> {
     let mut cpp_code = format!(
         "\
 #include <stdio.h>
@@ -322,22 +322,8 @@ int main() {{
     if debug {
         cpp_code.push_str("\tunsigned int debug_count = 0;\n")
     }
-    for code in contents.chars() {
-        cpp_code.push_str(match code {
-            '>' => "\tptr++;\n",
-            '<' => "\tptr--;\n",
-            '+' => "\t(*ptr)++;\n",
-            '-' => "\t(*ptr)--;\n",
-            '.' => "\tprintf(\"%c\", *ptr);\n",
-            ',' => "\t*ptr = getch();\n",
-            '[' => "\twhile (*ptr) {\n",
-            ']' => "\t}\n",
-            '#' if debug => {
-                "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);"
-            }
-            _ => {return Err("Invalid Brainfuck character")},
-        })
-    }
+    let gen_code = gen_optimized(contents.to_string(), debug)?;
+    cpp_code += &gen_code;
     cpp_code.push_str("\treturn 0;\n}\n");
     Ok(cpp_code)
 }
@@ -413,7 +399,7 @@ fn run(filename: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn run_in_terminal(args: Args) -> Result<(), &'static str> {
+pub fn run_in_terminal(args: Args) -> Result<(), String> {
     let getch = Getch::new().unwrap();
     let mut mem = vec![0];
     for _ in 0..args.offset {
@@ -453,7 +439,7 @@ fn eval(
     debug: bool,
     getch: &Getch,
     mem_size: usize,
-) -> Result<(), &'static str> {
+) -> Result<(), String> {
     let mut codeptr = 0;
     let mut bracemap: HashMap<usize, usize> = HashMap::new();
     let mut temp = Vec::new();
@@ -475,7 +461,7 @@ fn eval(
             '>' => {
                 *cellptr += 1;
                 if *cellptr > mem_size {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 if *cellptr == mem.len() {
                     mem.push(0)
@@ -483,7 +469,7 @@ fn eval(
             }
             '<' => {
                 if *cellptr == 0 {
-                    return Err("Memory index out of bound");
+                    return Err("Memory index out of bound".to_owned());
                 }
                 *cellptr -= 1;
             }
@@ -509,9 +495,91 @@ fn eval(
                     debug_count, mem[*cellptr] as char, mem[*cellptr], cellptr
                 )
             }
-            _ => return Err("Invalid BrainFuck character"),
+            ch => return Err(format!("Invalid BrainFuck character: '{}'", ch)),
         }
         codeptr += 1;
     }
     Ok(())
+}
+
+pub fn verbosify(filename: &str) -> Result<(), String> {
+    println!("\x1b[1mOpening {}...\x1b[0m", filename);
+    let mut contents = match fs::read_to_string(filename) {
+        Ok(contents) => contents,
+        Err(err) => return Err(err.to_string()),
+    };
+    println!("\x1b[1mVerbosifying...\x1b[0m");
+    contents.retain(|c| "<>[]+-.,".contains(c));
+    let mut cpp_file = match File::create(filename) {
+        Ok(x) => x,
+        Err(err) => return Err(err.to_string()),
+    };
+    println!("\x1b[1mSaving {}...\x1b[0m", filename);
+    match cpp_file.write_all(contents.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
+    let mut gen_code = String::new();
+    while code.contains("><")
+        || code.contains("<>")
+        || code.contains("+-")
+        || code.contains("-+")
+        || code.contains("[-]")
+        || code.contains("[+]")
+    {
+        code = code.replace("><", "");
+        code = code.replace("<>", "");
+        code = code.replace("+-", "");
+        code = code.replace("-+", "");
+        code = code.replace("[-]", "c");
+        code = code.replace("[+]", "c");
+    }
+    let mut chars = code.chars().peekable();
+    while let Some(op) = chars.next() {
+        gen_code.push_str(&match op {
+            '>' | '<' => {
+                let mut counter = if op == '>' { 1 } else { -1 };
+                loop {
+                    counter += match chars.peek() {
+                        Some('>') => 1,
+                        Some('<') => -1,
+                        _ => break
+                    };
+                    chars.next();
+                }
+                format!("\tptr += {};\n", counter)
+            },
+            '+' | '-' | 'c' => {
+                let mut counter = if op == '+' { 1 } else if op == '-' { -1 } else {0};
+                let mut getch = false;
+                loop {
+                    counter += match chars.peek() {
+                        Some('+') => 1,
+                        Some('-') => -1,
+                        Some(',') => {
+                            getch = true;
+                            break;
+                        }
+                        Some('c') => -counter,
+                        _ => break
+                    };
+                    chars.next();
+                }
+                if getch {"\t*ptr = getch();\n".to_owned()}
+                else {format!("\t*ptr += {};\n", counter)}
+            },
+            '.' => "\tprintf(\"%c\", *ptr);\n".to_owned(),
+            ',' => "\t*ptr = getch();\n".to_owned(),
+            '[' => "\twhile (*ptr) {\n".to_owned(),
+            ']' => "\t}\n".to_owned(),
+            '#' if debug => {
+                "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);".to_owned()
+            }
+            _ => {return Err(format!("Invalid BrainFuck character: '{}'", op))},
+        });
+    }
+    Ok(gen_code)
 }
