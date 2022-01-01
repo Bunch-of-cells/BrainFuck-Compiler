@@ -79,7 +79,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                 println!("  --compiler | -c        Select the compiler to compile the C generated file, default is gcc");
                 println!("  --run | -r             Runs the program after compiling");
                 println!("  --interpret | -i       Interprets the program instead of compiling it");
-                println!("  --debug | -d           Activates the debug mode.\n\t\t\t In the debug mode, any # will be considered as a debug symbol");
+                println!("  --debug | -d           Activates the debug mode.\n\t\t\t In the debug mode, any # or | will be considered as a debug symbol");
                 println!("  --mem_size | -m        Set the memory, default is 30000");
                 println!("  --release | -rl        Compiles in release mode");
                 println!("  --verbose | -v         Compiles VerboseFuck");
@@ -219,7 +219,7 @@ pub fn interpret(mut contents: String, args: Args) -> Result<(), String> {
         mem.push(0)
     }
     if !args.verbose {
-        contents.retain(|c| "<>[]+-.,#".contains(c))
+        contents.retain(|c| "<>[]+-.,#|".contains(c))
     }
     let mut cellptr = args.offset;
     let mut debug_count = 0;
@@ -279,6 +279,13 @@ pub fn interpret(mut contents: String, args: Args) -> Result<(), String> {
                     debug_count, mem[cellptr] as char, mem[cellptr], cellptr
                 )
             }
+            '|' if args.debug => {
+                println!(
+                    "\n{:?}",
+                    &mem[(cellptr as i32 - 10).clamp(0, args.mem_size as i32) as usize
+                        ..=(cellptr + 10).clamp(0, args.mem_size)]
+                )
+            }
             ch => {
                 error = Some(format!("Invalid BrainFuck character: '{}'", ch));
                 break;
@@ -313,8 +320,8 @@ int getch() {{
 }}
 
 int main() {{
-    char mem[{}];
-    char* ptr = mem + {};
+    unsigned char mem[{}];
+    unsigned char* ptr = mem + {};
 
 ",
         mem, offset
@@ -330,7 +337,7 @@ int main() {{
 
 pub fn compile(mut contents: String, args: Args) -> Result<(), Box<dyn Error>> {
     if !args.verbose {
-        contents.retain(|c| "<>[]+-.,#".contains(c));
+        contents.retain(|c| "<>[]+-.,#|".contains(c));
     }
     println!("\x1b[1mCreating the C file...\x1b[0m");
     let mut cpp_file = File::create([args.output, ".c"].concat())?;
@@ -417,7 +424,7 @@ pub fn run_in_terminal(args: Args) -> Result<(), String> {
             break Ok(());
         }
         if !args.verbose {
-            contents.retain(|c| "<>[]+-.,#".contains(c));
+            contents.retain(|c| "<>[]+-.,#|".contains(c));
         }
         eval(
             &contents,
@@ -495,6 +502,13 @@ fn eval(
                     debug_count, mem[*cellptr] as char, mem[*cellptr], cellptr
                 )
             }
+            '|' if debug => {
+                println!(
+                    "\n{:?}",
+                    &mem[(*cellptr as i32 - 10).clamp(0, mem.len() as i32) as usize
+                        ..=(*cellptr + 10).clamp(0, mem.len())]
+                )
+            }
             ch => return Err(format!("Invalid BrainFuck character: '{}'", ch)),
         }
         codeptr += 1;
@@ -553,14 +567,18 @@ pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
                 if counter == 0 {"".to_owned()}
                 else {format!("\tptr += {};\n", counter)}
             },
-            '+' | '-' | 'c' | ',' => {
+            '+' | '-' | ',' | 'c' => {
                 let mut counter = if op == '+' { 1 } else if op == '-' { -1 } else {0};
                 let mut getch = (op == ',') as usize;
+                let mut c = op == 'c';
                 loop {
                     counter += match chars.peek() {
                         Some('+') => 1,
                         Some('-') => -1,
-                        Some('c') => -counter,
+                        Some('c') => {
+                            c = true;
+                            -counter
+                        },
                         Some(',') => {
                             getch += 1;
                             -counter
@@ -570,16 +588,20 @@ pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
                     chars.next();
                 }
                 if getch > 0 {
-                    format!("\t*ptr = {}+ {};\n", "getch() ".repeat(getch), counter)
+                    format!("\t{}\n\t*ptr = getch() + {};\n", "getch();".repeat(getch - 1), counter)
                 }
+                else if c {format!("\t*ptr = {};\n", counter)}
                 else if counter == 0 {"".to_owned()}
                 else {format!("\t*ptr += {};\n", counter)}
             },
-            '.' => "\tprintf(\"%c\", *ptr);\n".to_owned(),
+            '.' => "\tputchar(*ptr);\n".to_owned(),
             '[' => "\twhile (*ptr) {\n".to_owned(),
             ']' => "\t}\n".to_owned(),
             '#' if debug => {
-                "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);".to_owned()
+                "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);\n".to_owned()
+            }
+            '|' if debug => {
+                "\tprintf(\"\\n\");for (int i = 0; i < 30; i++) {printf(\"%d \", mem[i]);}printf(\"\\n\");\n".to_owned()
             }
             _ => {return Err(format!("Invalid BrainFuck character: '{}'", op))},
         });
