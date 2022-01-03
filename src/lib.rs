@@ -329,7 +329,7 @@ int main() {{
     if debug {
         cpp_code.push_str("\tunsigned int debug_count = 0;\n")
     }
-    let gen_code = gen_optimized(contents.to_string(), debug)?;
+    let gen_code = gen_optimized(contents.to_string(), debug, mem)?;
     cpp_code += &gen_code;
     cpp_code.push_str("\treturn 0;\n}\n");
     Ok(cpp_code)
@@ -535,7 +535,7 @@ pub fn verbosify(filename: &str) -> Result<(), String> {
     }
 }
 
-pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
+pub fn gen_optimized(mut code: String, debug: bool, mem_len: usize) -> Result<String, String> {
     let mut gen_code = String::new();
     while code.contains("><")
         || code.contains("<>")
@@ -601,7 +601,7 @@ pub fn gen_optimized(mut code: String, debug: bool) -> Result<String, String> {
                 "\tdebug_count += 1;printf(\"\\ndebug flag %d : %c, %d, %ld\\n\", debug_count, *ptr, *ptr, ptr-mem);\n".to_owned()
             }
             '|' if debug => {
-                "\tprintf(\"\\n\");for (int i = 0; i < 30; i++) {printf(\"%d \", mem[i]);}printf(\"\\n\");\n".to_owned()
+                format!("\tprintf(\"\\n\");for (unsigned char* i = ptr - 15; i < ptr + 15; i++) {{if (i < mem || i > mem+{}) continue; if (i == ptr) printf(\"|%d| \", *i); else printf(\"%d \", *i); }}printf(\"\\n\");\n", mem_len)
             }
             _ => {return Err(format!("Invalid BrainFuck character: '{}'", op))},
         });
